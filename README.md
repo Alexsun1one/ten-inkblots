@@ -193,7 +193,7 @@ node --test test/scoring.test.mjs test/protocol.test.mjs test/server.test.mjs
 
 ## 来源与授权
 
-- 代码和文档：[MIT](LICENSE)。
+- 代码和文档：[MIT](LICENSE)。不在授权内的部分见 [NOTICE](NOTICE)。
 - 十张图版：Hermann Rorschach 1921 年发表。Wikimedia Commons 把这套图版标为 Public Domain Mark（[示例](https://commons.wikimedia.org/wiki/File:Rorschach_blot_04.jpg)）。各地版权判断可能不同，商用前请自行确认。
 - 作者二维码不在 MIT 授权内。fork 时请替换或删除 `rorschach/app/author-qr.png`，并修改 `rorschach/app/index.html` 和 `rorschach/scripts/lib/report.mjs` 里的名字。删掉图片后，报告里的作者卡会自动消失。
 - 分享卡和分享文字里的仓库地址在 `rorschach/scripts/lib/report.mjs` 的 `PROJECT`，二维码是 `rorschach/app/repo-qr.png`，fork 时一起改。
