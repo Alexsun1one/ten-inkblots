@@ -1,0 +1,1878 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rorschach-protocol/1.0",
+  "title": "Rorschach session protocol",
+  "description": "One session, as a hierarchy: session > card > exposure > gesture > sample, and card > response > utterance | stroke. See conventions in each document for units.",
+  "type": "object",
+  "required": [
+    "schema",
+    "conventions",
+    "session",
+    "participant",
+    "stimulus",
+    "administration",
+    "phases",
+    "cards",
+    "other",
+    "choices",
+    "transcript",
+    "safety",
+    "scoring",
+    "narrative",
+    "feedback",
+    "integrity"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "rorschach-protocol/1.0"
+    },
+    "conventions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": [
+        "id",
+        "createdAt",
+        "generatedAt",
+        "durationMs",
+        "status",
+        "phaseReached",
+        "language",
+        "software"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+        },
+        "generatedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+        },
+        "durationMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "incomplete"
+          ]
+        },
+        "phaseReached": {
+          "$ref": "#/$defs/phase"
+        },
+        "language": {
+          "type": "string"
+        },
+        "software": {
+          "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "required": [
+        "name",
+        "question"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "age": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 120
+        },
+        "education": {
+          "enum": [
+            "初中及以下",
+            "高中或中专",
+            "大专",
+            "本科",
+            "硕士",
+            "博士",
+            null
+          ]
+        },
+        "occupation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "question": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "stimulus": {
+      "type": "object",
+      "required": [
+        "set",
+        "widthPx",
+        "heightPx",
+        "plates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "set": {
+          "type": "string"
+        },
+        "widthPx": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "heightPx": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "plates": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "required": [
+              "card",
+              "roman",
+              "chromatic",
+              "file",
+              "sha256"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "card": {
+                "$ref": "#/$defs/card"
+              },
+              "roman": {
+                "type": "string"
+              },
+              "chromatic": {
+                "type": "boolean"
+              },
+              "file": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "administration": {
+      "type": "object",
+      "required": [
+        "voice",
+        "client",
+        "resizes",
+        "fullscreen",
+        "mic",
+        "tools",
+        "echoDropped"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "voice": {
+          "type": "object",
+          "required": [
+            "mode",
+            "name",
+            "changes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "auto",
+                "codex",
+                "local",
+                "external",
+                "text"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "tMs",
+                  "status",
+                  "mode",
+                  "reason"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "tMs": {
+                    "$ref": "#/$defs/ms"
+                  },
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "client": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "viewport",
+                "dpr",
+                "pointer",
+                "touch",
+                "userAgent"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "viewport": {
+                  "$ref": "#/$defs/viewport"
+                },
+                "dpr": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "pointer": {
+                  "enum": [
+                    "fine",
+                    "coarse",
+                    "none"
+                  ]
+                },
+                "touch": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "userAgent": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "resizes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tMs",
+              "viewport"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "tMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "viewport": {
+                "$ref": "#/$defs/viewport"
+              }
+            }
+          }
+        },
+        "fullscreen": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tMs",
+              "on"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "tMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "on": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "mic": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tMs",
+              "muted"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "tMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "muted": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tMs",
+              "tool"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "tMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "tool": {
+                "enum": [
+                  "hand",
+                  "pen",
+                  "erase"
+                ]
+              }
+            }
+          }
+        },
+        "echoDropped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tMs",
+              "text"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "tMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "startMs",
+          "endMs"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/phase"
+          },
+          "startMs": {
+            "$ref": "#/$defs/ms"
+          },
+          "endMs": {
+            "$ref": "#/$defs/ms"
+          }
+        }
+      }
+    },
+    "cards": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/plateRecord"
+      }
+    },
+    "other": {
+      "description": "Speech outside the plates and the four questions (intake, debrief, anything said in a safety pause) and gestures with no exposure to belong to.",
+      "type": "object",
+      "required": [
+        "utterances",
+        "gestures"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "utterances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/utterance"
+          }
+        },
+        "gestures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gesture"
+          }
+        }
+      }
+    },
+    "choices": {
+      "description": "The four questions after the inquiry, always in this order: liked, disliked, father, mother. father and mother describe what the plate feels like to this person, not their real parents.",
+      "type": "object",
+      "required": [
+        "answers",
+        "moves",
+        "exposures"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "answers": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": [
+              "question",
+              "card",
+              "skipped",
+              "via",
+              "askedMs",
+              "chosenMs",
+              "endMs",
+              "why",
+              "history"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "question": {
+                "enum": [
+                  "liked",
+                  "disliked",
+                  "father",
+                  "mother"
+                ]
+              },
+              "card": {
+                "$ref": "#/$defs/cardOrNull"
+              },
+              "skipped": {
+                "type": "boolean"
+              },
+              "via": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "askedMs": {
+                "$ref": "#/$defs/msOrNull"
+              },
+              "chosenMs": {
+                "$ref": "#/$defs/msOrNull"
+              },
+              "endMs": {
+                "$ref": "#/$defs/msOrNull"
+              },
+              "why": {
+                "type": "object",
+                "required": [
+                  "verbatim",
+                  "utterances"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "verbatim": {
+                    "type": "string"
+                  },
+                  "utterances": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/utterance"
+                    }
+                  }
+                }
+              },
+              "history": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "tMs",
+                    "card",
+                    "via"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "tMs": {
+                      "$ref": "#/$defs/ms"
+                    },
+                    "card": {
+                      "$ref": "#/$defs/card"
+                    },
+                    "via": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "prompts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "tMs",
+                    "kind"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "tMs": {
+                      "$ref": "#/$defs/ms"
+                    },
+                    "kind": {
+                      "enum": [
+                        "nudge",
+                        "prompt_more",
+                        "hint",
+                        "pull",
+                        "ask_more",
+                        "ask_why",
+                        "ask_where"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "moves": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "card",
+              "startMs",
+              "endMs",
+              "question"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "card": {
+                "$ref": "#/$defs/card"
+              },
+              "startMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "endMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "question": {
+                "enum": [
+                  "liked",
+                  "disliked",
+                  "father",
+                  "mother",
+                  null
+                ]
+              }
+            }
+          }
+        },
+        "exposures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exposure"
+          }
+        }
+      }
+    },
+    "transcript": {
+      "description": "Everything said, flat and in time order. Participant lines point back to their utterance.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "tMs",
+          "endMs",
+          "who",
+          "text",
+          "utterance"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "tMs": {
+            "$ref": "#/$defs/ms"
+          },
+          "endMs": {
+            "$ref": "#/$defs/msOrNull"
+          },
+          "who": {
+            "enum": [
+              "examiner",
+              "participant"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "utterance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "safety": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "tMs",
+          "kind",
+          "via"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "tMs": {
+            "$ref": "#/$defs/ms"
+          },
+          "kind": {
+            "enum": [
+              "paused",
+              "resumed"
+            ]
+          },
+          "via": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "required": [
+        "coded",
+        "summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "coded": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "narrative": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "feedback": {
+      "type": "object"
+    },
+    "integrity": {
+      "type": "object",
+      "required": [
+        "traceEvents",
+        "traceSha256",
+        "utterances",
+        "responses",
+        "strokes",
+        "removedStrokes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "traceEvents": {
+          "$ref": "#/$defs/ms"
+        },
+        "traceSha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "utterances": {
+          "$ref": "#/$defs/ms"
+        },
+        "responses": {
+          "$ref": "#/$defs/ms"
+        },
+        "strokes": {
+          "$ref": "#/$defs/ms"
+        },
+        "removedStrokes": {
+          "$ref": "#/$defs/ms"
+        }
+      }
+    },
+    "trace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "seq",
+          "t",
+          "src",
+          "type"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "msOrNull": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "card": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "cardOrNull": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 10
+    },
+    "deg": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 359.9
+    },
+    "unit": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "phase": {
+      "enum": [
+        "threshold",
+        "intake",
+        "response",
+        "inquiry",
+        "choices",
+        "scoring",
+        "report",
+        "debrief"
+      ]
+    },
+    "notation": {
+      "enum": [
+        "∧",
+        ">",
+        "∨",
+        "<"
+      ]
+    },
+    "viewport": {
+      "type": "object",
+      "required": [
+        "w",
+        "h"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "w": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "h": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "viewState": {
+      "description": "What was on screen. Plate-relative fields are null while the whole table is in view.",
+      "type": "object",
+      "required": [
+        "mode",
+        "z",
+        "w",
+        "cx",
+        "cy",
+        "deg",
+        "visible",
+        "box"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "focus",
+            "board"
+          ]
+        },
+        "z": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "w": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "cx": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cy": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "deg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/deg"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visible": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/unit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "box": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {
+                "$ref": "#/$defs/unit"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "viewStateOrNull": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/viewState"
+        }
+      ]
+    },
+    "gesture": {
+      "description": "One continuous interaction. samples are rate-limited [dtMs, z, cx, cy, deg]; from and to are always exact.",
+      "type": "object",
+      "required": [
+        "op",
+        "via",
+        "startMs",
+        "endMs",
+        "from",
+        "to",
+        "samples"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "zoom",
+            "pan",
+            "rotate",
+            "transform",
+            "fit",
+            "board"
+          ]
+        },
+        "via": {
+          "enum": [
+            "wheel",
+            "trackpad",
+            "pinch",
+            "drag",
+            "key",
+            "button",
+            "handle",
+            "dblclick",
+            "system"
+          ]
+        },
+        "startMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "endMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "from": {
+          "$ref": "#/$defs/viewStateOrNull"
+        },
+        "to": {
+          "$ref": "#/$defs/viewStateOrNull"
+        },
+        "samples": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 5,
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/ms"
+              },
+              {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/deg"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "viewSummary": {
+      "type": "object",
+      "required": [
+        "gestures",
+        "rotations",
+        "zoomMax",
+        "zoomedMs",
+        "visibleMin"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "gestures": {
+          "$ref": "#/$defs/ms"
+        },
+        "rotations": {
+          "$ref": "#/$defs/ms"
+        },
+        "zoomMax": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "zoomedMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "visibleMin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/unit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "exposure": {
+      "description": "One stretch of time a plate was on screen. A plate is exposed again during inquiry.",
+      "type": "object",
+      "required": [
+        "phase",
+        "response",
+        "startMs",
+        "endMs",
+        "hiddenMs",
+        "start",
+        "summary",
+        "gestures"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "$ref": "#/$defs/phase"
+        },
+        "response": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "endMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "hiddenMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "start": {
+          "$ref": "#/$defs/viewStateOrNull"
+        },
+        "summary": {
+          "$ref": "#/$defs/viewSummary"
+        },
+        "gestures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gesture"
+          }
+        }
+      }
+    },
+    "utterance": {
+      "type": "object",
+      "required": [
+        "id",
+        "phase",
+        "text",
+        "source",
+        "onsetMs",
+        "onsetBasis",
+        "firstTextMs",
+        "endMs",
+        "deg",
+        "command",
+        "safety"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^p\\d+$"
+        },
+        "phase": {
+          "$ref": "#/$defs/phase"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": [
+            "codex",
+            "whisper",
+            "typed",
+            "external"
+          ]
+        },
+        "onsetMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "onsetBasis": {
+          "enum": [
+            "vad",
+            "typing",
+            "transcript"
+          ]
+        },
+        "firstTextMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "endMs": {
+          "$ref": "#/$defs/ms"
+        },
+        "deg": {
+          "$ref": "#/$defs/deg"
+        },
+        "command": {
+          "type": "boolean"
+        },
+        "safety": {
+          "type": "boolean"
+        }
+      }
+    },
+    "geometry": {
+      "description": "A shape measured against the plate's ink mask. locationHint is a heuristic for the coder, not a score.",
+      "type": "object",
+      "required": [
+        "box",
+        "inkCoverage",
+        "areaFraction",
+        "inkPurity",
+        "locationHint",
+        "nearRegion",
+        "closed",
+        "rotation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "box": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number",
+            "minimum": -0.05,
+            "maximum": 1.05
+          }
+        },
+        "inkCoverage": {
+          "$ref": "#/$defs/unit"
+        },
+        "areaFraction": {
+          "$ref": "#/$defs/unit"
+        },
+        "inkPurity": {
+          "$ref": "#/$defs/unit"
+        },
+        "locationHint": {
+          "enum": [
+            "W",
+            "D",
+            "Dd",
+            "S"
+          ]
+        },
+        "nearRegion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed": {
+          "type": "boolean"
+        },
+        "rotation": {
+          "$ref": "#/$defs/deg"
+        }
+      }
+    },
+    "stroke": {
+      "type": "object",
+      "required": [
+        "id",
+        "by",
+        "phase",
+        "response",
+        "startMs",
+        "endMs",
+        "pointer",
+        "points",
+        "pointTimes",
+        "pressure",
+        "view",
+        "geometry",
+        "label",
+        "snapshot",
+        "removedMs",
+        "removedVia"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^s\\d+$"
+        },
+        "by": {
+          "enum": [
+            "user",
+            "examiner"
+          ]
+        },
+        "phase": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/phase"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "response": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startMs": {
+          "$ref": "#/$defs/msOrNull"
+        },
+        "endMs": {
+          "$ref": "#/$defs/msOrNull"
+        },
+        "pointer": {
+          "enum": [
+            "mouse",
+            "pen",
+            "touch",
+            null
+          ]
+        },
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "pointTimes": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ms"
+              }
+            }
+          ]
+        },
+        "pressure": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/unit"
+              }
+            }
+          ]
+        },
+        "view": {
+          "$ref": "#/$defs/viewStateOrNull"
+        },
+        "geometry": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/geometry"
+            }
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "removedMs": {
+          "$ref": "#/$defs/msOrNull"
+        },
+        "removedVia": {
+          "enum": [
+            "undo",
+            "erase",
+            "unmark",
+            null
+          ]
+        }
+      }
+    },
+    "code": {
+      "type": "object",
+      "required": [
+        "id",
+        "loc",
+        "space",
+        "dq",
+        "det",
+        "pair",
+        "fq",
+        "content",
+        "pop",
+        "z",
+        "special",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^r\\d+$"
+        },
+        "loc": {
+          "enum": [
+            "W",
+            "D",
+            "Dd"
+          ]
+        },
+        "space": {
+          "type": "boolean"
+        },
+        "dq": {
+          "enum": [
+            "+",
+            "o",
+            "v/+",
+            "v"
+          ]
+        },
+        "det": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "pair": {
+          "type": "boolean"
+        },
+        "fq": {
+          "enum": [
+            "+",
+            "o",
+            "u",
+            "-",
+            "none"
+          ]
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "pop": {
+          "type": "boolean"
+        },
+        "z": {
+          "enum": [
+            "ZW",
+            "ZA",
+            "ZD",
+            "ZS",
+            null
+          ]
+        },
+        "special": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": [
+        "id",
+        "ordinal",
+        "label",
+        "tidy",
+        "orientation",
+        "freeAssociation",
+        "viewAtOnset",
+        "inquiry",
+        "location",
+        "code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^r\\d+$"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tidy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "orientation": {
+          "type": "object",
+          "required": [
+            "deg",
+            "notation"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "deg": {
+              "$ref": "#/$defs/deg"
+            },
+            "notation": {
+              "$ref": "#/$defs/notation"
+            }
+          }
+        },
+        "freeAssociation": {
+          "type": "object",
+          "required": [
+            "startMs",
+            "endMs",
+            "verbatim",
+            "utterances"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "startMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "endMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "verbatim": {
+              "type": "string"
+            },
+            "utterances": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/utterance"
+              }
+            }
+          }
+        },
+        "viewAtOnset": {
+          "$ref": "#/$defs/viewStateOrNull"
+        },
+        "inquiry": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "askedMs",
+                "endMs",
+                "prompt",
+                "verbatim",
+                "utterances"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "askedMs": {
+                  "$ref": "#/$defs/ms"
+                },
+                "endMs": {
+                  "$ref": "#/$defs/ms"
+                },
+                "prompt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "verbatim": {
+                  "type": "string"
+                },
+                "utterances": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/utterance"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "location": {
+          "type": "object",
+          "required": [
+            "geometry",
+            "strokes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "geometry": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/geometry"
+                }
+              ]
+            },
+            "strokes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/stroke"
+              }
+            }
+          }
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/code"
+            }
+          ]
+        }
+      }
+    },
+    "plateRecord": {
+      "type": "object",
+      "required": [
+        "card",
+        "roman",
+        "chromatic",
+        "timing",
+        "pacing",
+        "orientation",
+        "view",
+        "exposures",
+        "responses",
+        "unassigned",
+        "removedStrokes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "card": {
+          "$ref": "#/$defs/card"
+        },
+        "roman": {
+          "type": "string"
+        },
+        "chromatic": {
+          "type": "boolean"
+        },
+        "timing": {
+          "type": "object",
+          "required": [
+            "shownMs",
+            "onsetMs",
+            "onsetBasis",
+            "promptEndMs",
+            "rtMs",
+            "rtBasis",
+            "endMs",
+            "durationMs",
+            "hiddenMs",
+            "endedBy"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shownMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "onsetMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "onsetBasis": {
+              "enum": [
+                "painted",
+                "server",
+                null
+              ]
+            },
+            "promptEndMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "rtMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "rtBasis": {
+              "enum": [
+                "vad",
+                "typing",
+                "transcript",
+                null
+              ]
+            },
+            "endMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "durationMs": {
+              "$ref": "#/$defs/msOrNull"
+            },
+            "hiddenMs": {
+              "$ref": "#/$defs/ms"
+            },
+            "endedBy": {
+              "enum": [
+                "voice",
+                "button",
+                "agent",
+                "pull",
+                "refused",
+                null
+              ]
+            }
+          }
+        },
+        "pacing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "tMs",
+              "kind"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "tMs": {
+                "$ref": "#/$defs/ms"
+              },
+              "kind": {
+                "enum": [
+                  "nudge",
+                  "prompt_more",
+                  "hint",
+                  "pull",
+                  "ask_more",
+                  "ask_why",
+                  "ask_where"
+                ]
+              },
+              "response": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "orientation": {
+          "type": "object",
+          "required": [
+            "final",
+            "changes",
+            "dwellMs"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "final": {
+              "$ref": "#/$defs/deg"
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "tMs",
+                  "deg",
+                  "notation",
+                  "via",
+                  "phase"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "tMs": {
+                    "$ref": "#/$defs/ms"
+                  },
+                  "deg": {
+                    "$ref": "#/$defs/deg"
+                  },
+                  "notation": {
+                    "$ref": "#/$defs/notation"
+                  },
+                  "via": {
+                    "type": "string"
+                  },
+                  "phase": {
+                    "$ref": "#/$defs/phase"
+                  }
+                }
+              }
+            },
+            "dwellMs": {
+              "type": "object",
+              "required": [
+                "0",
+                "90",
+                "180",
+                "270"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "0": {
+                  "$ref": "#/$defs/ms"
+                },
+                "90": {
+                  "$ref": "#/$defs/ms"
+                },
+                "180": {
+                  "$ref": "#/$defs/ms"
+                },
+                "270": {
+                  "$ref": "#/$defs/ms"
+                }
+              }
+            }
+          }
+        },
+        "view": {
+          "$ref": "#/$defs/viewSummary"
+        },
+        "exposures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exposure"
+          }
+        },
+        "responses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/response"
+          }
+        },
+        "unassigned": {
+          "type": "object",
+          "required": [
+            "utterances",
+            "strokes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "utterances": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/utterance"
+              }
+            },
+            "strokes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/stroke"
+              }
+            }
+          }
+        },
+        "removedStrokes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stroke"
+          }
+        }
+      }
+    }
+  }
+}

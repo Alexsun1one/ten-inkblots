@@ -1,0 +1,10 @@
+.DS_Store
+.herdr/
+.omx/
+.codex/
+.claude/
+node_modules/
+# Source scans, generated originals and the dev drivers with local paths stay out of the public repo.
+JPG/
+docs/images-src/
+tools/

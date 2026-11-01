@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
+<title>十张墨迹</title>
+<link rel="stylesheet" href="/app/style.css">
+</head>
+<body data-phase="threshold" data-tool="hand">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="2.6"/><feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 16 -6.5"/></filter>
+</svg>
+
+<main id="stage" aria-label="墨迹图版画布">
+  <div id="world"></div>
+</main>
+
+<nav id="slots" aria-label="四个问题" hidden></nav>
+
+<header id="marker">
+  <span id="numeral" aria-live="polite">I</span>
+  <ol id="ticks" aria-hidden="true"></ol>
+</header>
+
+<aside id="ledger" aria-label="你说过的"><ol id="items"></ol></aside>
+
+<nav id="tools" aria-label="工具">
+  <button data-tool="hand" title="拖动 (H)" aria-label="拖动"><svg viewBox="0 0 24 24"><path d="M8 12V5.5a1.5 1.5 0 013 0V11m0-1V4a1.5 1.5 0 013 0v7m0-5.5a1.5 1.5 0 013 0V13m0-4.5a1.5 1.5 0 013 0V15c0 3.9-2.9 6.5-6.5 6.5-2.7 0-4.3-1-5.7-3L4.7 14a1.6 1.6 0 012.5-2L8 13"/></svg></button>
+  <button data-tool="pen" title="圈画 (P)" aria-label="圈画"><svg viewBox="0 0 24 24"><path d="M4 20l1.2-4.6L16.4 4.2a2 2 0 012.8 0l.6.6a2 2 0 010 2.8L8.6 18.8 4 20zM14.5 6l3.5 3.5"/></svg></button>
+  <button data-tool="erase" title="擦除一笔 (E)" aria-label="擦除一笔"><svg viewBox="0 0 24 24"><path d="M8.5 20H20M5 14.6l8.8-9.1a2 2 0 012.9 0l3 3a2 2 0 010 2.8L12.2 20H8.5l-3.5-3a1.7 1.7 0 010-2.4zM9.5 10l6 6"/></svg></button>
+  <button data-act="undo" title="撤销 (⌘Z)" aria-label="撤销"><svg viewBox="0 0 24 24"><path d="M8 5L4 9l4 4M4 9h10a6 6 0 010 12h-3"/></svg></button>
+  <button data-act="redo" title="重做 (⇧⌘Z)" aria-label="重做"><svg viewBox="0 0 24 24"><path d="M16 5l4 4-4 4M20 9H10a6 6 0 000 12h3"/></svg></button>
+  <i></i>
+  <button data-act="ccw" title="向左转 (⇧R)" aria-label="向左转"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 102.6-5.9M4 3v5h5"/></svg></button>
+  <button data-act="cw" title="向右转 (R)" aria-label="向右转"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.6-5.9M20 3v5h-5"/></svg></button>
+  <i></i>
+  <button data-act="in" title="放大 (+)" aria-label="放大"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button data-act="fit" id="zoomv" title="回到图版 (0)" aria-label="回到图版">100%</button>
+  <button data-act="out" title="缩小 (-)" aria-label="缩小"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+  <i></i>
+  <button data-act="board" title="看整张桌子 (B)" aria-label="看整张桌子"><svg viewBox="0 0 24 24"><path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z"/></svg></button>
+  <button data-act="full" title="全屏 (F)" aria-label="全屏"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+</nav>
+
+<p id="notice" role="status" hidden></p>
+<footer id="dock">
+  <p id="line" aria-live="polite"></p>
+  <p id="live" aria-live="off"></p>
+  <div id="bar">
+    <button id="orb" title="静音 (M)" aria-label="麦克风"><canvas width="168" height="168"></canvas></button>
+    <button id="kbd" title="打字 (T)" aria-label="打字"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg></button>
+    <form id="type"><input id="typed" placeholder="也可以打字" autocomplete="off" aria-label="打字回答"></form>
+    <button id="skip" hidden>跳过这一题</button>
+    <button id="next">下一张</button>
+  </div>
+</footer>
+
+<section id="threshold">
+  <div class="door card-face">
+    <canvas id="doorBlot" width="1100" height="780" aria-hidden="true"></canvas>
+    <h1>十张墨迹</h1>
+    <i class="redline"></i>
+    <p class="lead">说你看到了什么，<br>再把它圈出来。</p>
+    <p class="fine" id="voiceNote"></p>
+    <div class="go">
+      <button id="begin" class="primary">开始</button>
+      <div id="voices" role="radiogroup" aria-label="声音"></div>
+    </div>
+    <p class="fine">这不是诊断，也不能代替心理咨询。如果最近很难熬，请找一位真人聊聊：12356。记录存在这台电脑上，你说的话、填的信息和报告内容会发给主持测试的 AI 服务。</p>
+  </div>
+  <form class="door person card-face" id="person" hidden autocomplete="off">
+    <h2>先认识一下</h2>
+    <i class="redline"></i>
+    <label><span>昵称</span><input id="pName" maxlength="20" autocomplete="nickname"></label>
+    <label><span>年龄</span><input id="pAge" inputmode="numeric" maxlength="3" pattern="[0-9]*"></label>
+    <div class="row" role="radiogroup" aria-labelledby="pEduL"><span id="pEduL">学历</span><div id="pEdu"></div></div>
+    <label><span>职业</span><input id="pJob" maxlength="40"></label>
+    <p class="fine" id="pMinor" hidden>这个练习是按成年人设计的。可以请一位信任的大人或老师陪你一起做。</p>
+    <p class="fine">都可以不填。填了只用来读懂你说的话，不和别人比。</p>
+    <button id="personGo" class="primary">继续</button>
+    <p class="err" id="beginErr" hidden></p>
+  </form>
+  <aside class="maker card-face">
+    <img src="/app/author-qr.png" width="72" height="72" alt="孙务远的微信二维码">
+    <div><b>孙务远</b><span>做这个测试的人。聊这个工具可以加我，心理咨询请找专业的人。</span></div>
+  </aside>
+</section>
+
+<section id="scoring" hidden>
+  <div class="scorecard card-face">
+    <canvas id="scoreBlot" width="1100" height="780" aria-hidden="true"></canvas>
+    <p id="scoreLine">正在写这封信</p>
+    <i class="redline"></i>
+    <p id="scoreProgress"></p>
+  </div>
+</section>
+
+<section id="safety" class="card-face" hidden role="alertdialog" aria-labelledby="safetyT">
+  <h2 id="safetyT">我们先停一下</h2>
+  <p>你说的话我听到了。如果此刻很难熬，可以现在就找一个真人说说。</p>
+  <p class="big">12356</p>
+  <p class="fine">全国心理援助热线。身边有紧急危险，请拨 120 或 110。</p>
+  <button id="resume">我没事，继续</button>
+</section>
+
+<iframe id="report" title="报告" hidden></iframe>
+
+<script>window.ROR_KEY = '__KEY__';</script>
+<script src="/app/report.js"></script>
+<script src="/app/voice.js"></script>
+<script src="/app/app.js"></script>
+</body>
+</html>
