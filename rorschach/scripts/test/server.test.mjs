@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ import { RealtimeBridge } from '../lib/realtime.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROR = join(HERE, '..', 'ror.mjs');
 const FAKE = join(HERE, 'fake-codex.mjs');
+chmodSync(FAKE, 0o755); // skill installers unpack without the executable bit
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const scratch = () => mkdtempSync(join(tmpdir(), 'ror-test-'));
 
