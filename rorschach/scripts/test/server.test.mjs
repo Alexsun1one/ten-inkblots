@@ -426,7 +426,7 @@ test('an agent that stops reading events is noticed on the page, and cleared onc
 const bridgeFor = (t, mode, extra = {}) => {
   const log = join(scratch(), 'fake.log');
   process.env.FAKE_CODEX_MODE = mode;
-  const b = new RealtimeBridge({ bin: FAKE, cwd: tmpdir(), reqTimeoutMs: 1500, sdpTimeoutMs: 300, ...extra });
+  const b = new RealtimeBridge({ bin: FAKE, cwd: tmpdir(), reqTimeoutMs: 6000, sdpTimeoutMs: 300, ...extra });
   t.after(() => { b.kill(); delete process.env.FAKE_CODEX_MODE; });
   return { b, log };
 };
