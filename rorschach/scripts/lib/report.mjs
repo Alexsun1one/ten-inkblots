@@ -373,7 +373,8 @@ export function renderReport({ state: S, codes, summary: Y, narrative: N, signal
   const cardList = Array.from({ length: 10 }, (_, i) => i + 1);
   const totalMs = cardList.reduce((s, n) => s + (S.cards[n].totalMs || 0), 0);
   const turns = cardList.reduce((s, n) => s + (S.cards[n].rotationCount || 0), 0);
-  const slow = cardList.reduce((b, n) => ((S.cards[n].rtMs || 0) > (S.cards[b].rtMs || 0) ? n : b), 1);
+  const steadyRt = n => (S.cards[n].voiceGapMs ? 0 : S.cards[n].rtMs || 0);
+  const slow = cardList.reduce((b, n) => (steadyRt(n) > steadyRt(b) ? n : b), 1);
   const ordered = [...S.responses].sort((a, b) => a.card - b.card);
   const contentCounts = CONTENT_GROUPS.map(([w, set]) => [w, codes.filter(c => inOneOf(c.content, set)).length]).sort((a, b) => b[1] - a[1]);
   const fact = (v, unit, word, tip) => `<div class="fact"${tip ? ` data-tip="${esc(tip)}"` : ''}><b class="press">${v}</b>${unit ? `<i>${unit}</i>` : ''}<span>${word}</span></div>`;

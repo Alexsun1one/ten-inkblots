@@ -101,7 +101,7 @@
     if (!up) { pc.close(); pc = null; return { error: 'webrtc_timeout' }; }
     inCall = true;
     if (talk) gate(true);
-    api('/api/voice/up').catch(() => {});
+    await api('/api/voice/up').catch(() => {});
     return { ok: true };
   }
   const hangUp = () => {
@@ -197,7 +197,7 @@
   addEventListener('pointerdown', wake, true);
   addEventListener('keydown', wake, true);
 
-  V.connect = async ({ mode, voiceName, localReady }) => {
+  V.connect = async ({ mode, voiceName, localReady, retry }) => {
     if (mode === 'external') { V.mode = 'external'; return { mode: 'external' }; }
     if (mode === 'text') { V.mode = 'text'; return { mode: 'text' }; }
     try { await mic(); } catch (e) {
@@ -208,7 +208,13 @@
     meters();
     let m = mode, reason = null;
     if (m === 'codex') {
-      const r = await connectRealtime(voiceName).catch(e => ({ error: e.message }));
+      let r = await connectRealtime(voiceName).catch(e => ({ error: e.message }));
+      // A page opened while a dropped call is being replaced gets the tries the old page would have had.
+      for (let i = 0; retry && r.error && r.error !== 'webrtc_blocked' && i < 2; i++) {
+        await new Promise(done => setTimeout(done, 3000));
+        hangUp();
+        r = await connectRealtime(voiceName).catch(e => ({ error: e.message }));
+      }
       if (r.error) {
         // Whatever the cause, the server and the record must know the voice did not come up.
         m = r.fallback && r.fallback !== 'codex' ? r.fallback : localReady ? 'local' : 'text';

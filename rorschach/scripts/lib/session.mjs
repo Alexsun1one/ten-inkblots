@@ -53,6 +53,7 @@ export const paths = dir => ({
   inbox: join(dir, 'inbox.jsonl'),
   cursor: join(dir, 'agent.cursor'),
   away: join(dir, 'agent.away'),
+  back: join(dir, 'agent.back'),
   replies: join(dir, 'replies.jsonl'),
   codes: join(dir, 'codes.json'),
   narrative: join(dir, 'narrative.json'),

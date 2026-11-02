@@ -53,12 +53,13 @@ export function computeSignals(S, codes, protocol) {
   const answered = Object.keys(ASK).filter(k => S.choices?.[k]?.card);
 
   // ---------- pauses ----------
-  const timed = cards.filter(c => c.timing?.rtMs != null);
+  // A dropped call stretches these times, and that says nothing about the person.
+  const timed = cards.filter(c => c.timing?.rtMs != null && !c.timing.voiceGapMs);
   const rtMid = median(timed.map(c => c.timing.rtMs));
   timed.map(c => ({ n: c.card, rt: c.timing.rtMs, x: c.timing.rtMs / (rtMid || 1) }))
     .filter(c => c.x >= 2 && c.rt - rtMid >= 4000).sort((a, b) => b.x - a.x).slice(0, 2)
     .forEach(c => add('pause', c.x >= 3 && c.n !== 1 ? 'high' : 'mid', [c.n], `第 ${ROMAN[c.n]} 张开口前停了 ${sec(c.rt)}，是你自己中位数（${sec(rtMid)}）的 ${c.x.toFixed(1)} 倍`, on(c.n).map(r => r.id)));
-  const lingered = cards.filter(c => c.timing?.durationMs), stayMid = median(lingered.map(c => c.timing.durationMs));
+  const lingered = cards.filter(c => c.timing?.durationMs && !c.timing.voiceGapMs), stayMid = median(lingered.map(c => c.timing.durationMs));
   lingered.filter(c => c.timing.durationMs >= stayMid * 2 && c.timing.durationMs - stayMid >= 15000).slice(0, 2)
     .forEach(c => add('linger', 'mid', [c.card], `第 ${ROMAN[c.card]} 张一共停了 ${sec(c.timing.durationMs)}，比其他图长得多`, on(c.card).map(r => r.id)));
 

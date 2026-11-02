@@ -35,6 +35,7 @@ const SCRIPT = {
   nextCard: '这张呢？',
   firstPrompt: '这可能是什么？',
   nudge: '不着急，想到什么都可以说。',
+  again: '刚才声音断了一下，你说的我可能没听到，可以再说一遍吗？',
   promptMore: '也许还能看到别的。',
   more: '还有吗？',
   pull: '好，这张就看到这里。',
@@ -127,6 +128,8 @@ const sync = () => { save(); push('state', publicState()); };
 // ---------- speech queue ----------
 let bridge = null;
 let holdLines = false; // true from a dropped call until the new one can be heard
+// Words about safety do not wait for a call: they go out as captions if that is all there is.
+const linesHeld = () => holdLines && S.voice.mode === 'codex' && !S.paused;
 const speech = { queue: [], busy: false, timer: null, current: null, id: traceSeq, briefing: null, rebrief: false };
 function say(text, { flush = false, then = null } = {}) {
   // A step forward makes older unspoken lines stale.
@@ -138,7 +141,7 @@ function say(text, { flush = false, then = null } = {}) {
   pump();
 }
 function pump() {
-  if (speech.busy || !speech.queue.length || holdLines) return;
+  if (speech.busy || !speech.queue.length || linesHeld()) return;
   const line = speech.queue.shift();
   speech.busy = true; speech.current = line;
   const guard = Math.max(9000, line.text.length * 420);
@@ -238,9 +241,10 @@ function voiceTalks() {
   push('gate', { open: true });
 }
 function voiceReads() {
-  if (S.voice.mode !== 'codex' || !bridge?.live) return;
-  bridge.context(ACTOR_RULES).catch(() => {});
+  if (S.voice.mode !== 'codex') return;
+  // The gate closes whether or not there is a call right now: the next call must not inherit it open.
   push('gate', { open: false });
+  if (bridge?.live) bridge.context(ACTOR_RULES).catch(() => {});
 }
 function onCrisis(text, via) {
   if (S.paused) return;
@@ -304,7 +308,7 @@ const HINT_MS = Number(process.env.RORSCHACH_HINT_MS) || Math.max(18000, FOLLOWU
 const HOLD_MS = 12000;
 let askedAt = 0;
 // A question just asked and not yet answered: the agent should not move on from under it.
-const justAsked = () => Date.now() - askedAt < HOLD_MS && !S.phrases.some(p => p.at > askedAt);
+const justAsked = () => holdLines || (Date.now() - askedAt < HOLD_MS && !S.phrases.some(p => p.at > askedAt));
 function followUp(kind, line, where) {
   askedAt = Date.now();
   trace('pacing', { ...where, kind });
@@ -318,7 +322,7 @@ function hintOnce(holder, where) {
   push('hint', { next: true });
 }
 function pace() {
-  if (S.paused || speech.busy || talking || holdLines) return;
+  if (S.paused || speech.busy || talking || linesHeld()) return;
   const idle = Date.now() - lastActivity;
   if (S.phase === 'response' && !S.responseDone) {
     const c = S.cards[S.card], said = responsesOn(S.card).length || phrasesOn(S.card).length;
@@ -702,7 +706,11 @@ function resolveVoice() {
   if (S.voice.mode === 'local') spawn(whisperBin(), ['--help'], { stdio: 'ignore', env: toolEnv(whisperBin()) }).on('error', () => {});
   if (codex) {
     bridge = new RealtimeBridge({ bin: codex.bin, cwd: DIR, log });
-    bridge.on('started', () => { if (S.phase === 'debrief' || S.paused) voiceTalks(); });
+    bridge.on('started', () => {
+      if (S.phase === 'debrief' || S.paused) voiceTalks();
+      else if (callTalks) voiceReads(); // the pause ended while this call was being placed with talking rules
+      callTalks = false;
+    });
     bridge.on('delta', (role, d) => { if (role === 'user') { lastActivity = Date.now(); heard.delta(d); } else push('voiceDelta', { d }); });
     bridge.on('done', (role, text) => { if (role === 'user') heard.done(text); else if (speech.current) finishLine(); });
     bridge.on('handoff', text => { if (isCrisis(text)) onCrisis(clean(text)); toAgent({ t: 'handoff', text: clean(text || ''), note: '用户直接对你说的话或请求，语音模型已转交给你' }); });
@@ -714,11 +722,14 @@ function resolveVoice() {
 // The record says what actually happened from here on: typing, not a voice that is gone.
 function voiceLost(status, reason) {
   heard.flush();
-  if (stopping || S.voice.mode !== 'codex' || S.voice.status !== 'live') return;
+  if (stopping || S.voice.mode !== 'codex') return;
+  // Nothing to lose, unless the page reports a call the server had put down to a page leaving.
+  if (S.voice.status !== 'live' && !(status === 'lost' && S.voice.status === 'idle')) return;
   // The call ends with the page that held it. A refresh brings a new one, so that is no reason to give up on voice.
-  if (status === 'closed' && Date.now() - pageLeftAt < PAGE_LEFT_MS) {
+  if (status === 'closed' && !clients.size && Date.now() - pageLeftAt < PAGE_LEFT_MS) {
     endCutLine();
     S.voice.status = 'idle';
+    S.voice.dial = (S.voice.dial || 0) + 1; // the same page coming back on a reconnect has to place the call itself
     trace('voice', { status: 'page_left', mode: 'codex', reason });
     sync();
     return;
@@ -730,11 +741,14 @@ function voiceLost(status, reason) {
 }
 // The line being read will never report that it ended.
 function endCutLine() { if (speech.current) { clearTimeout(speech.timer); speech.timer = setTimeout(finishLine, 1500); } }
-let redials = 0, redialTimer = null, liveSince = 0;
+let redials = 0, redialTimer = null, liveSince = 0, callTalks = false, gap = null, speechInGap = false;
 function redial(status, reason) {
   redials++;
   holdLines = true;
   S.voice.status = 'redialing';
+  S.voice.dial = (S.voice.dial || 0) + 1;
+  gap ??= { at: Date.now(), card: S.phase === 'response' ? S.card : null };
+  speechInGap ||= talking;
   // The person never heard the end of whatever was being read, so the new call reads it again.
   const line = speech.current;
   if (line) {
@@ -746,21 +760,29 @@ function redial(status, reason) {
   }
   trace('voice', { status: 'redialing', mode: 'codex', reason });
   sync();
-  push('voiceRedial', {});
   clearTimeout(redialTimer);
   redialTimer = setTimeout(() => giveUpVoice(status, reason), REDIAL_MS);
+}
+// Time with no voice is not time spent looking at the plate.
+function endGap() {
+  if (!gap) return;
+  const ms = Date.now() - gap.at;
+  for (const n of new Set([gap.card, S.phase === 'response' ? S.card : null])) if (S.cards[n]) S.cards[n].voiceGapMs = (S.cards[n].voiceGapMs || 0) + ms;
+  gap = null;
 }
 function releaseLines() { holdLines = false; pump(); }
 function giveUpVoice(status, reason) {
   clearTimeout(redialTimer);
-  if (stopping || S.voice.mode !== 'codex') return;
-  endCutLine();
-  Object.assign(S.voice, { mode: 'text', status, error: reason });
-  trace('voice', { status, mode: 'text', reason });
-  bridge?.stop().catch(() => {});
-  sync();
-  push('voiceLost', { message: reason });
-  toAgent({ t: 'voice', status, mode: 'text', reason });
+  endGap();
+  if (!stopping && S.voice.mode === 'codex') {
+    endCutLine();
+    Object.assign(S.voice, { mode: 'text', status, error: reason });
+    trace('voice', { status, mode: 'text', reason });
+    bridge?.stop().catch(() => {});
+    sync();
+    push('voiceLost', { message: reason });
+    toAgent({ t: 'voice', status, mode: 'text', reason });
+  }
   releaseLines();
 }
 
@@ -814,8 +836,13 @@ const API = {
     try {
       if (!redialing) S.voice.status = 'connecting';
       // A call that begins where the voice may talk starts with those rules: rules appended later can arrive before the call can hear them.
-      const sdp = await bridge.start(b.sdp, S.voice.name, S.phase === 'debrief' || S.paused ? talkRules() : undefined);
-      if (redialing) return { sdp }; // live once the page says it can be heard
+      callTalks = S.phase === 'debrief' || S.paused;
+      const sdp = await bridge.start(b.sdp, S.voice.name, callTalks ? talkRules() : undefined);
+      if (redialing) {
+        if (S.voice.mode === 'codex') return { sdp }; // live once the page says it can be heard
+        bridge.stop().catch(() => {}); // given up while this was on its way
+        return { error: 'voice_given_up' };
+      }
       liveSince = Date.now();
       S.voice.status = 'live'; S.voice.mode = 'codex'; S.voice.error = null;
       pageLeftAt = 0; // the page that left has come back; if this call ends now, the voice really is gone
@@ -831,26 +858,36 @@ const API = {
       trace('voice', { status: 'failed', mode: S.voice.mode, reason: e.message });
       sync();
       toAgent({ t: 'voice', status: 'failed', message: e.message, fallback: S.voice.mode });
+      clearTimeout(redialTimer);
+      if (holdLines) { endGap(); releaseLines(); }
       return { error: e.message, fallback: S.voice.mode };
     }
   },
   'POST /api/voice/up': async () => {
     if (!holdLines || S.voice.mode !== 'codex') return {};
     clearTimeout(redialTimer);
+    endGap();
     liveSince = Date.now();
     S.voice.status = 'live'; S.voice.error = null;
     pageLeftAt = 0;
+    // A question cut off is asked again from here, so the agent's wait for an answer starts from here too.
+    if (askedAt && !S.phrases.some(p => p.at > askedAt)) askedAt = Date.now();
     trace('voice', { status: 'live', mode: 'codex' });
     sync();
     toAgent({ t: 'voice', status: 'live', voice: S.voice.name });
     releaseLines();
+    if (speechInGap && !S.paused && S.phase !== 'debrief') say(SCRIPT.again);
+    speechInGap = false;
+    // The old call's end can be reported after the new one starts. Lines would then show without being read.
+    setTimeout(() => { if (S.voice.status === 'live' && S.voice.mode === 'codex' && !bridge?.live) voiceLost('closed', 'no call after redial'); }, 3000);
     return {};
   },
   'POST /api/voice/redial': async b => { voiceLost('lost', String(b.reason ?? '')); return {}; },
   'POST /api/voice/mode': async b => {
     clearTimeout(redialTimer);
     if (b.status === 'failed' || b.status === 'lost') bridge?.stop().catch(() => {});
-    S.voice.mode = b.mode; S.voice.status = b.status || S.voice.status;
+    S.voice.mode = b.mode; S.voice.status = b.status || (S.voice.status === 'redialing' ? 'failed' : S.voice.status);
+    endGap();
     const status = b.status === 'lost' ? 'lost' : 'mode';
     trace('voice', { status, mode: b.mode, reason: b.reason || null });
     sync();
@@ -868,7 +905,7 @@ const API = {
       trace(type, { ...rest, ...(endAt != null ? { endMs: Math.max(0, Math.round(endAt + offset - S.createdAt)) } : {}) }, (at ?? Date.now() - offset) + offset, 'client');
       if (type === 'gesture' && rest.card && rest.to?.deg != null && S.cards[rest.card]) S.cards[rest.card].deg = normDeg(rest.to.deg);
       if (type === 'gesture') lastActivity = Date.now();
-      if (type === 'speech.onset') talking = true;
+      if (type === 'speech.onset') { talking = true; if (holdLines) speechInGap = true; }
       if (type === 'speech.offset') talking = false;
     }
     save();

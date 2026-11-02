@@ -9,6 +9,7 @@ const LOG = process.env.FAKE_CODEX_LOG;
 const note = m => { if (LOG) appendFileSync(LOG, JSON.stringify(m) + '\n'); };
 const send = m => process.stdout.write(JSON.stringify(m) + '\n');
 note({ pid: process.pid });
+let endedOnce = false;
 
 createInterface({ input: process.stdin }).on('line', line => {
   const m = JSON.parse(line);
@@ -23,10 +24,16 @@ createInterface({ input: process.stdin }).on('line', line => {
       ok();
       if (MODE === 'no-sdp') return;
       send({ method: 'thread/realtime/sdp', params: { sdp: 'fake-answer' } });
+      if (MODE === 'late-started') return setTimeout(() => send({ method: 'thread/realtime/started', params: {} }), 1500);
       return send({ method: 'thread/realtime/started', params: {} });
     case 'thread/realtime/stop':
       ok();
       return send({ method: 'thread/realtime/closed', params: { reason: 'stopped' } });
+    case 'thread/realtime/appendText':
+      ok();
+      // The service ends a call while the app-server lives on: what a reset connection looks like from here.
+      if (m.params?.text?.includes('断线') && !endedOnce && (endedOnce = true)) send({ method: 'thread/realtime/closed', params: { reason: 'transport_closed' } });
+      return undefined;
     default: return ok();
   }
 });

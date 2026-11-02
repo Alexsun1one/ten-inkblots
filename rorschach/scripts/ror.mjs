@@ -78,7 +78,9 @@ async function wait() {
   const named = opts.session || process.env.RORSCHACH_SESSION || readIf(join(homeDir(), 'current'))?.trim();
   if (named && !existsSync(named)) return out({ ended: true, deleted: true });
   const dir = DIR(), P = paths(dir);
-  rmSync(P.away, { force: true });
+  const put = (file, text) => { try { writeFileSync(file, text); } catch (e) { if (e.code !== 'ENOENT') throw e; } };
+  // Someone asked the agent to come back, so the quiet starts counting again from here.
+  if (existsSync(P.away)) { rmSync(P.away, { force: true }); put(P.back, String(Date.now())); }
   const timeout = Number(opts.timeout || 45) * 1000;
   const t0 = Date.now();
   let pos = startAt(P, opts.after);
@@ -97,7 +99,6 @@ async function wait() {
       return buf.subarray(0, end).toString('utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
     } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
   };
-  const put = (file, text) => { try { writeFileSync(file, text); } catch (e) { if (e.code !== 'ENOENT') throw e; } };
   const remember = () => put(P.cursor, String(pos));
   const events = [];
   while (Date.now() - t0 < timeout) {
@@ -117,12 +118,12 @@ async function wait() {
   const s = readJson(P.state) || {};
   const heldFor = events.length ? null : Math.round((Date.now() - t0) / 1000);
   const result = { events, phase: s.phase, card: s.card, focus: s.focus, responses: (s.responses || []).length, paused: s.paused, ...(heldFor != null ? { idleSeconds: heldFor } : {}) };
-  const stillFor = (Date.now() - (Math.max(changedAt(P.events), changedAt(P.trace)) || t0)) / 1000;
+  const stillFor = (Date.now() - (Math.max(changedAt(P.events), changedAt(P.trace), changedAt(P.back)) || t0)) / 1000;
   if (!events.length && stillFor >= QUIET_S) {
     put(P.away, String(Date.now()));
     return out({ ...result, quiet: true, note: `页面约七分钟没有任何动静，对方可能走开了。这一轮先结束，告诉对方：回来后在这里说一声「继续」。对方说了再运行 ror wait，这期间的事件都还在。${s.paused ? '现在是安全暂停，结束前再给一次 12356。' : ''}` });
   }
-  out({ ...result, next: `ror wait --after ${pos}.${sizeOf(P.trace)}${!events.length && stillFor >= LONGER_AFTER_S ? ' --timeout 90' : ''}` });
+  out({ ...result, next: `ror wait${opts.session ? ` --session '${dir}'` : ''} --after ${pos}.${sizeOf(P.trace)}${!events.length && stillFor >= LONGER_AFTER_S ? ' --timeout 90' : ''}` });
 }
 
 async function send(name, args, wait_ = 20000) {

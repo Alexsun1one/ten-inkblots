@@ -128,7 +128,14 @@ export class RealtimeBridge extends EventEmitter {
     }
   }
 
-  async start(offerSdp, voice, rules = ACTOR_RULES) {
+  // Two offers at once would answer each other's pages, so a newer one waits for the older to settle.
+  start(offerSdp, voice, rules = ACTOR_RULES) {
+    const run = (this.starting ?? Promise.resolve()).catch(() => {}).then(() => this.placeCall(offerSdp, voice, rules));
+    this.starting = run;
+    return run;
+  }
+
+  async placeCall(offerSdp, voice, rules) {
     // A refreshed page offers again: the session it left behind goes first.
     if (this.live) await this.stop();
     await this.boot();

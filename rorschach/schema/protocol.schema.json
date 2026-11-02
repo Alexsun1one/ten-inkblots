@@ -1718,6 +1718,9 @@
             "hiddenMs": {
               "$ref": "#/$defs/ms"
             },
+            "voiceGapMs": {
+              "$ref": "#/$defs/ms"
+            },
             "endedBy": {
               "enum": [
                 "voice",

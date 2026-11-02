@@ -444,13 +444,28 @@ test('a session that is moving never repeats a wait command, even with nothing f
 
 test('a position is a place to read from: a lost reply can be fetched again, a mangled one does no harm', async t => {
   const s = session(t);
-  const first = s.ror('wait', '--timeout', '0.1');
   await s.post('/api/begin');
+  const first = s.ror('wait', '--timeout', '1');
+  assert.ok(first.events.length);
+  assert.ok(Number(first.next.match(/--after (\d+)/)[1]) > 0);
+  await s.post('/api/feedback', { key: 'k', value: 'yes' });
   const got = s.ror('wait', ...argsOf(first.next));
+  assert.ok(got.events.some(e => e.t === 'feedback'));
   const again = s.ror('wait', ...argsOf(first.next));
-  assert.deepEqual(again.events.slice(0, got.events.length), got.events);
+  assert.ok(again.events.some(e => e.t === 'feedback'));
+  assert.ok(!again.events.some(e => e.t === 'begin'));
   s.ror('wait', ...argsOf(again.next), '--timeout', '0.1');
   for (const bad of ['1', '99999999', 'x']) assert.deepEqual(s.ror('wait', '--after', bad, '--timeout', '0.1').events, []);
+});
+
+test('next keeps the session it was asked about', () => {
+  const home = scratch(), dir = join(home, 'sessions', 'x');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'server.json'), JSON.stringify({ pid: 1, url: 'http://127.0.0.1:1/?k=x' }));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({ phase: 'response' }));
+  const r = JSON.parse(spawnSync(process.execPath, [ROR, 'wait', '--session', dir, '--timeout', '0.05'], { encoding: 'utf8', env: { ...process.env, RORSCHACH_HOME: home } }).stdout.trim());
+  assert.ok(r.next.includes(`--session '${dir}'`));
+  rmSync(home, { recursive: true, force: true });
 });
 
 test('with nothing moving, no command runs four times in a row and the agent is finally told to stop', t => {
@@ -464,14 +479,17 @@ test('with nothing moving, no command runs four times in a row and the agent is 
   writeFileSync(join(dir, 'state.json'), JSON.stringify({ phase: 'response' }));
   // Age the record by however long each command would really have held, then run it for an instant.
   const age = seconds => { const at = Date.now() / 1000 - seconds; utimesSync(events, at, at); utimesSync(trace, at, at); };
-  const run = args => JSON.parse(spawnSync(process.execPath, [ROR, 'wait', '--session', dir, ...args, '--timeout', '0.05'], { encoding: 'utf8', env: { ...process.env, RORSCHACH_HOME: home } }).stdout.trim());
-  let held = 0, cmd = 'ror wait', r;
+  const run = (after = []) => JSON.parse(spawnSync(process.execPath, [ROR, 'wait', '--session', dir, ...after, '--timeout', '0.05'], { encoding: 'utf8', env: { ...process.env, RORSCHACH_HOME: home } }).stdout.trim());
+  const position = cmd => ['--after', /--after (\S+)/.exec(cmd)[1]];
+  // From the first `next` on, which is the worst case: the bare first command would hide one repeat.
+  age(0);
+  let held = 0, cmd = run().next, r;
   const ran = [];
   for (let i = 0; i < 12; i++) {
     ran.push(cmd);
     held += Number(/--timeout (\d+)/.exec(cmd)?.[1] ?? 45);
     age(held);
-    r = run(argsOf(cmd).filter(a => a !== '--timeout' && !/^\d+$/.test(a)));
+    r = run(position(cmd));
     if (r.quiet) break;
     cmd = r.next;
   }
@@ -481,9 +499,11 @@ test('with nothing moving, no command runs four times in a row and the agent is 
   assert.ok(held >= 400 && held <= 600, `held ${held}`);
   assert.ok(longestRun(ran) <= 3, ran.join('\n'));
   assert.ok(existsSync(join(dir, 'agent.away')));
-  age(0);
-  assert.equal(run([]).quiet, undefined);
+  // Told to come back: the record is just as old, but the quiet counts from now and the same ladder runs again.
+  const back = run();
+  assert.equal(back.quiet, undefined);
   assert.ok(!existsSync(join(dir, 'agent.away')));
+  assert.ok(!back.next.includes('--timeout 90'), back.next);
 });
 
 test('a stop during a safety pause gives the hotline again', t => {
@@ -633,7 +653,7 @@ test('a call that drops while the page is open is placed again: same mode, the c
   dropCall(s);
   await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
   assert.equal((await s.state()).voice.mode, 'codex');
-  await until('页面收到重拨', () => page.seen().includes('voiceRedial'));
+  await until('页面读到重拨', () => page.seen().includes('"redialing"'));
   assert.ok(!s.events().some(e => e.t === 'voice' && e.status === 'closed'));
   // Lines wait for a call that can be heard: an offer answered is not yet audio flowing.
   assert.equal((await s.post('/api/voice/offer', { sdp: 'y' })).sdp, 'fake-answer');
@@ -692,6 +712,129 @@ test('a call that keeps dropping stops being placed, and a page that never answe
   await holdPage(t, quick);
   dropCall(quick);
   await until('没人接就退回打字', async () => (await quick.state()).voice.mode === 'text');
+});
+
+test('the service ending a call while the app-server lives on is redialed on the same thread', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await holdPage(t, s);
+  s.ror('say', '断线');
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+  assert.equal(s.trace().filter(e => e.type === 'voice').at(-1).reason, 'transport_closed');
+  await s.post('/api/voice/offer', { sdp: 'y' });
+  await s.post('/api/voice/up');
+  assert.equal((await s.state()).voice.status, 'live');
+  assert.equal(s.calls().filter(c => c.pid).length, 1);
+  assert.equal(s.calls().filter(c => c.method === 'thread/start').length, 1);
+});
+
+test('another tab closing does not make a dropped call look like this page left', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await holdPage(t, s);
+  const ctl = new AbortController();
+  const other = await fetch(s.url.replace('/?k=', '/api/events?k='), { signal: ctl.signal });
+  await other.body.getReader().read();
+  ctl.abort();
+  await wait(100);
+  dropCall(s);
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+});
+
+test('the same page returning on a reconnect finds a call to place, and can report one the server put down to it leaving', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await s.post('/api/begin');
+  const ctl = new AbortController();
+  const es = await fetch(s.url.replace('/?k=', '/api/events?k='), { signal: ctl.signal });
+  await es.body.getReader().read();
+  ctl.abort();
+  await wait(100);
+  dropCall(s);
+  await until('通话结束', async () => (await s.state()).voice.status === 'idle');
+  assert.ok((await s.state()).voice.dial >= 1);
+  await holdPage(t, s);
+  await s.post('/api/voice/redial', { reason: 'webrtc_failed' });
+  assert.equal((await s.state()).voice.status, 'redialing');
+});
+
+test('words spoken while the call is down are asked for again, and that time is not read as a pause', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await s.post('/api/begin');
+  s.ror('phase', 'response');
+  await holdPage(t, s);
+  await s.finishLines();
+  await until('第一张', async () => (await s.state()).card === 1, 15000);
+  dropCall(s);
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+  await s.post('/api/trace', { sentAt: Date.now(), events: [{ type: 'speech.onset', at: Date.now() }, { type: 'speech.offset', at: Date.now() }] });
+  await wait(120);
+  await s.post('/api/voice/offer', { sdp: 'y' });
+  await s.post('/api/voice/up');
+  await until('请对方再说一遍', () => s.trace().some(e => e.type === 'say.start' && e.text.includes('再说一遍')), 15000);
+  assert.ok((await s.state()).cards[1].voiceGapMs > 0);
+  assert.ok(s.ror('data', '--card', '1').timing.voiceGapMs > 0);
+  assert.equal(s.ror('export').ok, true);
+});
+
+test('the agent cannot move on from a question nobody could hear, but a pause gets through', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await s.post('/api/begin');
+  await holdPage(t, s);
+  s.ror('phase', 'choices');
+  await s.finishLines();
+  dropCall(s);
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+  assert.equal(s.ror('choice', '--next').reason, 'just_asked');
+  await s.utter('我觉得活着没意思');
+  assert.equal((await s.state()).paused, true);
+  await until('安全的话不被扣住', () => s.trace().some(e => e.type === 'say.start' && e.text.includes('你现在安全吗')), 3000);
+});
+
+const pausedThenDropped = async (t, s) => {
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await s.post('/api/begin');
+  const page = await holdPage(t, s);
+  await until('通话开始', async () => (await s.state()).voice.status === 'live');
+  await wait(1700);
+  await s.utter('我觉得活着没意思');
+  await until('暂停', async () => (await s.state()).paused === true);
+  dropCall(s);
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+  return page;
+};
+test('a pause ending while no call is up closes the gate, so the next call does not inherit it open', async t => {
+  const s = voiceSession(t, 'late-started');
+  const page = await pausedThenDropped(t, s);
+  const seenAt = page.seen().length;
+  s.ror('resume');
+  await until('门关上', () => page.seen().slice(seenAt).includes('"open":false'));
+});
+test('a call placed with talking rules is told to read if the pause ends before it starts', async t => {
+  const s = voiceSession(t, 'late-started');
+  await pausedThenDropped(t, s);
+  await s.post('/api/voice/offer', { sdp: 'y' });
+  const reading = () => s.calls().filter(c => c.role === 'developer' && c.text?.startsWith('你只是罗夏墨迹测验施测者的声音')).length;
+  const before = reading();
+  s.ror('resume');
+  await s.post('/api/voice/up');
+  await until('新通话改回照读', () => reading() > before, 6000);
+});
+
+test('giving up always lets lines through, whatever already changed the mode', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await holdPage(t, s);
+  dropCall(s);
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+  await s.post('/api/voice/mode', { mode: 'text' });
+  const st = await s.state();
+  assert.equal(st.voice.mode, 'text');
+  assert.notEqual(st.voice.status, 'redialing');
+  s.ror('say', '这句要出去');
+  await until('台词不被扣住', () => s.trace().some(e => e.type === 'say.start' && e.text === '这句要出去'));
 });
 
 test('a page giving up on the call is recorded as lost, and the deliberate close is not reported twice', async t => {

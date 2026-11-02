@@ -604,7 +604,7 @@
   let linkDown = false, sendFailed = false;
   function showNotice() {
     const n = $('#notice');
-    n.textContent = linkDown ? '和本机服务的连接断了，正在重连。' : sendFailed ? '刚才那句没有发出去，再按一次回车。' : S?.voice?.status === 'redialing' ? '语音断了一下，正在接回来。' : S?.agentStalled ? '主持的 AI 停下了，你说的都还在。回到和它的对话框，说一声「继续」。' : '';
+    n.textContent = linkDown ? '和本机服务的连接断了，正在重连。' : sendFailed ? '刚才那句没有发出去，再按一次回车。' : S?.voice?.mode === 'codex' && S.voice.status === 'redialing' ? '语音断了一下，正在接回来。' : S?.agentStalled ? '主持的 AI 停下了，你说的都还在。回到和它的对话框，说一声「继续」。' : '';
     n.hidden = !n.textContent;
   }
   function dropToText() {
@@ -619,6 +619,7 @@
   const setLine = t => { clearTimeout(lineTimer); const l = $('#line'); if (t) { l.textContent = t; l.classList.add('on'); } else l.classList.remove('on'); };
 
   // ---------- SSE ----------
+  let dialed;
   function connect() {
     const es = new EventSource(`/api/events?k=${K}`);
     es.addEventListener('state', e => {
@@ -627,6 +628,8 @@
       S = JSON.parse(e.data);
       render();
       if (S.voice?.mode === 'text' && ['codex', 'local'].includes(window.RorVoice.mode)) dropToText();
+      // Read from the state, not told once: this page may have been between connections when the call dropped.
+      if (S.voice?.dial !== dialed && S.voice?.mode === 'codex' && window.RorVoice.mode === 'codex' && ['redialing', 'idle'].includes(S.voice.status)) { dialed = S.voice.dial; window.RorVoice.redial(S.voice.name); }
       if (first) onFirstState();
       if (prevPhase !== S.phase) onPhase(S.phase);
       else if (prevCard !== S.card && view !== 'board') { hiRes(S.card); fitCard(S.card); }
@@ -647,7 +650,6 @@
     es.addEventListener('partial', e => { $('#live').textContent = JSON.parse(e.data).text; });
     es.addEventListener('hint', () => $('#next').classList.add('hint'));
     es.addEventListener('gate', e => window.RorVoice.setTalk(JSON.parse(e.data).open));
-    es.addEventListener('voiceRedial', () => window.RorVoice.redial(S?.voice?.name));
     es.addEventListener('voiceLost', () => { if (!['text', 'external'].includes(window.RorVoice.mode)) dropToText(); });
     es.addEventListener('report', () => { const f = $('#report'); if (!f.hidden) f.src = `/report?k=${K}&v=${Date.now()}`; });
     es.addEventListener('bye', () => { es.close(); clearTimeout(linkTimer); window.RorVoice.stop(); });
@@ -677,7 +679,7 @@
   // ---------- begin ----------
   async function beginVoice(resuming) {
     window.RorVoice.onSpeech = (on, at) => emit({ type: on ? 'speech.onset' : 'speech.offset', at });
-    const res = await window.RorVoice.connect({ mode: S.voice.mode, voiceName: voiceChoice, localReady: !!S.voice.available?.local });
+    const res = await window.RorVoice.connect({ mode: S.voice.mode, voiceName: S.voice.status === 'redialing' ? S.voice.name : voiceChoice, localReady: !!S.voice.available?.local, retry: S.voice.status === 'redialing' });
     document.body.dataset.input = res.mode === 'codex' || res.mode === 'local' ? 'voice' : 'text';
     if (res.reason && res.mode === 'text') $('#typed').placeholder = res.reason === 'webrtc_blocked' ? '浏览器禁用了 WebRTC，语音连不上。打字也一样' : '语音没有连上，打字也一样';
     if (res.mode === 'external') $('#orb').hidden = true;

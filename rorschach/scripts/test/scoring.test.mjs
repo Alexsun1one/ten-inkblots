@@ -382,6 +382,14 @@ test('a pause is measured against the person, not against anyone else', () => {
   assert.ok(pause.text.includes('5.0 倍'));
   assert.ok(!leadsFor({ responses: tenPlates, codes: tenCodes }).some(x => x.kind === 'pause'));
 });
+test('time stretched by a dropped call is not read as a pause or a long stay, and does not skew the person\'s median', () => {
+  const dropped = { rtMs: 60000, durationMs: 300000, shownMs: 1, voiceGapMs: 50000 };
+  const list = leadsFor({ responses: tenPlates, codes: tenCodes, cards: { 7: { timing: dropped } } });
+  assert.ok(!list.some(x => x.kind === 'pause'));
+  assert.ok(!list.some(x => x.kind === 'linger'));
+  const both = leadsFor({ responses: tenPlates, codes: tenCodes, cards: { 7: { timing: dropped }, 4: { timing: { rtMs: 20000, durationMs: 30000, shownMs: 1 } } } });
+  assert.deepEqual(both.find(x => x.kind === 'pause').cards, [4]);
+});
 test('a word that comes back across plates is found, even when the question used it', () => {
   const rs = [1, 3, 5, 7].map((n, i) => leadWord(`r${i + 1}`, n, '两个人隔着一堵东西')).concat(tenPlates.slice(0, 8).map((r, i) => ({ ...r, id: `x${i}` })));
   const cs = rs.map(r => leadCode(r.id));
