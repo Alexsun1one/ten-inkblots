@@ -2,7 +2,7 @@
 // Agent-facing CLI. Talks to the session server through files so it works inside agent sandboxes.
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendLine, newSessionDir, paths, readIf, readJson, resolveSession, homeDir, writeJsonAtomic } from './lib/session.mjs';
@@ -52,14 +52,36 @@ async function start() {
 
 const DIR = () => { try { return resolveSession(opts.session); } catch (e) { return die(e.message); } };
 
+// Harness loop guards stop an agent repeating an identical call, and a fixed `wait` is one. So `next` carries how far the
+// session has got: events read, and everything the page has recorded. It stays the same only while nothing at all moves;
+// then each round holds longer, and at QUIET_S the agent is told to stop asking. No command runs more than three times.
+const QUIET_S = 400;
+const LONGER_AFTER_S = 135;
+const sizeOf = f => { try { return statSync(f).size; } catch { return 0; } };
+const changedAt = f => { try { return statSync(f).mtimeMs; } catch { return 0; } };
+// The position comes back through a model, so a mangled one falls back to the saved cursor rather than tearing a line.
+function startAt(P, after) {
+  const saved = Number(readIf(P.cursor) || 0);
+  const n = parseInt(after, 10);
+  if (!Number.isInteger(n) || n < 0 || n > sizeOf(P.events)) return saved;
+  if (n === 0) return 0;
+  try {
+    const fd = openSync(P.events, 'r'), b = Buffer.alloc(1);
+    readSync(fd, b, 0, 1, n - 1);
+    closeSync(fd);
+    return b[0] === 10 ? n : saved;
+  } catch { return saved; }
+}
+
 async function wait() {
   // The person can delete the whole record at any moment, including between two calls of this.
   const named = opts.session || process.env.RORSCHACH_SESSION || readIf(join(homeDir(), 'current'))?.trim();
   if (named && !existsSync(named)) return out({ ended: true, deleted: true });
   const dir = DIR(), P = paths(dir);
+  rmSync(P.away, { force: true });
   const timeout = Number(opts.timeout || 45) * 1000;
   const t0 = Date.now();
-  let pos = Number(readIf(P.cursor) || 0);
+  let pos = startAt(P, opts.after);
   const read = () => {
     try {
       if (!existsSync(P.events)) return [];
@@ -75,7 +97,8 @@ async function wait() {
       return buf.subarray(0, end).toString('utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
     } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
   };
-  const remember = () => { try { writeFileSync(P.cursor, String(pos)); } catch (e) { if (e.code !== 'ENOENT') throw e; } };
+  const put = (file, text) => { try { writeFileSync(file, text); } catch (e) { if (e.code !== 'ENOENT') throw e; } };
+  const remember = () => put(P.cursor, String(pos));
   const events = [];
   while (Date.now() - t0 < timeout) {
     events.push(...read());
@@ -93,7 +116,13 @@ async function wait() {
   remember();
   const s = readJson(P.state) || {};
   const heldFor = events.length ? null : Math.round((Date.now() - t0) / 1000);
-  out({ events, phase: s.phase, card: s.card, focus: s.focus, responses: (s.responses || []).length, paused: s.paused, ...(heldFor != null ? { idleSeconds: heldFor } : {}) });
+  const result = { events, phase: s.phase, card: s.card, focus: s.focus, responses: (s.responses || []).length, paused: s.paused, ...(heldFor != null ? { idleSeconds: heldFor } : {}) };
+  const stillFor = (Date.now() - (Math.max(changedAt(P.events), changedAt(P.trace)) || t0)) / 1000;
+  if (!events.length && stillFor >= QUIET_S) {
+    put(P.away, String(Date.now()));
+    return out({ ...result, quiet: true, note: `页面约七分钟没有任何动静，对方可能走开了。这一轮先结束，告诉对方：回来后在这里说一声「继续」。对方说了再运行 ror wait，这期间的事件都还在。${s.paused ? '现在是安全暂停，结束前再给一次 12356。' : ''}` });
+  }
+  out({ ...result, next: `ror wait --after ${pos}.${sizeOf(P.trace)}${!events.length && stillFor >= LONGER_AFTER_S ? ' --timeout 90' : ''}` });
 }
 
 async function send(name, args, wait_ = 20000) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Stands in for `codex app-server` so failure paths can be exercised without a network or a login.
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 if (process.argv[2] === '--version') { console.log('codex-cli fake'); process.exit(0); }
@@ -18,7 +18,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   switch (m.method) {
     case 'thread/start': return ok({ thread: { id: 't1' } });
     case 'thread/realtime/start':
-      if (MODE === 'reject-start') return send({ id: m.id, error: { message: 'realtime refused' } });
+      if (MODE === 'reject-start' || (process.env.FAKE_CODEX_REFUSE && existsSync(process.env.FAKE_CODEX_REFUSE))) return send({ id: m.id, error: { message: 'realtime refused' } });
       if (MODE === 'die-on-start') process.exit(3);
       ok();
       if (MODE === 'no-sdp') return;

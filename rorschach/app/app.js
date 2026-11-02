@@ -342,6 +342,12 @@
   });
   document.addEventListener('visibilitychange', () => emit({ type: 'client.visibility', at: clock(), visible: !document.hidden }));
   document.addEventListener('fullscreenchange', () => emit({ type: 'client.fullscreen', at: clock(), on: !!document.fullscreenElement }));
+  // Thinking in front of a plate looks like an empty room unless the page says otherwise. "Still here", never where or what.
+  let hereAt = 0;
+  const here = () => { if (document.hidden || Date.now() - hereAt < 30000) return; hereAt = Date.now(); emit({ type: 'client.here', at: clock() }); };
+  const watchHere = w => { for (const k of ['pointermove', 'pointerdown', 'keydown', 'wheel', 'scroll']) w.addEventListener(k, here, { capture: true, passive: true }); };
+  watchHere(window);
+  $('#report').addEventListener('load', e => { try { watchHere(e.target.contentWindow); } catch { /* a walled-off frame keeps its events to itself */ } });
   addEventListener('pagehide', () => {
     endExposure();
     if (outbox.length) fetch('/api/trace', { method: 'POST', keepalive: true, headers: { 'content-type': 'application/json', 'x-ror-key': K }, body: JSON.stringify({ sentAt: clock(), events: outbox.splice(0) }) }).catch(() => {});
@@ -598,7 +604,7 @@
   let linkDown = false, sendFailed = false;
   function showNotice() {
     const n = $('#notice');
-    n.textContent = linkDown ? '和本机服务的连接断了，正在重连。' : sendFailed ? '刚才那句没有发出去，再按一次回车。' : S?.agentStalled ? '施测的 agent 几分钟没有回应了，可以回到它那边看看。' : '';
+    n.textContent = linkDown ? '和本机服务的连接断了，正在重连。' : sendFailed ? '刚才那句没有发出去，再按一次回车。' : S?.voice?.status === 'redialing' ? '语音断了一下，正在接回来。' : S?.agentStalled ? '主持的 AI 停下了，你说的都还在。回到和它的对话框，说一声「继续」。' : '';
     n.hidden = !n.textContent;
   }
   function dropToText() {
@@ -641,6 +647,7 @@
     es.addEventListener('partial', e => { $('#live').textContent = JSON.parse(e.data).text; });
     es.addEventListener('hint', () => $('#next').classList.add('hint'));
     es.addEventListener('gate', e => window.RorVoice.setTalk(JSON.parse(e.data).open));
+    es.addEventListener('voiceRedial', () => window.RorVoice.redial(S?.voice?.name));
     es.addEventListener('voiceLost', () => { if (!['text', 'external'].includes(window.RorVoice.mode)) dropToText(); });
     es.addEventListener('report', () => { const f = $('#report'); if (!f.hidden) f.src = `/report?k=${K}&v=${Date.now()}`; });
     es.addEventListener('bye', () => { es.close(); clearTimeout(linkTimer); window.RorVoice.stop(); });

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -422,6 +422,94 @@ test('an agent that stops reading events is noticed on the page, and cleared onc
   await until('恢复', async () => (await s.state()).agentStalled === false, 12000);
 });
 
+// ---------- the wait loop, under a harness that stops an agent repeating an identical call ----------
+const argsOf = cmd => cmd.split(' ').slice(2);
+const longestRun = list => { let best = 0, run = 0; list.forEach((x, i) => { run = x === list[i - 1] ? run + 1 : 1; best = Math.max(best, run); }); return best; };
+
+test('a session that is moving never repeats a wait command, even with nothing for the agent to read', async t => {
+  const s = session(t);
+  const first = s.ror('wait', '--timeout', '0.1');
+  assert.match(first.next, /^ror wait --after \d+\.\d+$/);
+  await s.post('/api/begin');
+  const second = s.ror('wait', ...argsOf(first.next));
+  assert.ok(second.events.some(e => e.t === 'begin'));
+  assert.notEqual(second.next, first.next);
+  const before = s.ror('wait', ...argsOf(second.next), '--timeout', '0.1');
+  await s.post('/api/trace', { sentAt: Date.now(), events: [{ type: 'client.here', at: Date.now() }] });
+  const after = s.ror('wait', ...argsOf(before.next), '--timeout', '0.1');
+  assert.deepEqual(after.events, []);
+  assert.notEqual(after.next, before.next);
+  assert.ok(s.trace().some(e => e.type === 'client.here'));
+});
+
+test('a position is a place to read from: a lost reply can be fetched again, a mangled one does no harm', async t => {
+  const s = session(t);
+  const first = s.ror('wait', '--timeout', '0.1');
+  await s.post('/api/begin');
+  const got = s.ror('wait', ...argsOf(first.next));
+  const again = s.ror('wait', ...argsOf(first.next));
+  assert.deepEqual(again.events.slice(0, got.events.length), got.events);
+  s.ror('wait', ...argsOf(again.next), '--timeout', '0.1');
+  for (const bad of ['1', '99999999', 'x']) assert.deepEqual(s.ror('wait', '--after', bad, '--timeout', '0.1').events, []);
+});
+
+test('with nothing moving, no command runs four times in a row and the agent is finally told to stop', t => {
+  const home = scratch(), dir = join(home, 'sessions', 'x');
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(dir, { recursive: true });
+  const events = join(dir, 'events.jsonl'), trace = join(dir, 'trace.jsonl');
+  writeFileSync(events, '{"t":"begin"}\n');
+  writeFileSync(trace, '{"type":"session.start"}\n');
+  writeFileSync(join(dir, 'server.json'), JSON.stringify({ pid: 1, url: 'http://127.0.0.1:1/?k=x' }));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({ phase: 'response' }));
+  // Age the record by however long each command would really have held, then run it for an instant.
+  const age = seconds => { const at = Date.now() / 1000 - seconds; utimesSync(events, at, at); utimesSync(trace, at, at); };
+  const run = args => JSON.parse(spawnSync(process.execPath, [ROR, 'wait', '--session', dir, ...args, '--timeout', '0.05'], { encoding: 'utf8', env: { ...process.env, RORSCHACH_HOME: home } }).stdout.trim());
+  let held = 0, cmd = 'ror wait', r;
+  const ran = [];
+  for (let i = 0; i < 12; i++) {
+    ran.push(cmd);
+    held += Number(/--timeout (\d+)/.exec(cmd)?.[1] ?? 45);
+    age(held);
+    r = run(argsOf(cmd).filter(a => a !== '--timeout' && !/^\d+$/.test(a)));
+    if (r.quiet) break;
+    cmd = r.next;
+  }
+  assert.equal(r.quiet, true);
+  assert.equal(r.next, undefined);
+  assert.match(r.note, /继续/);
+  assert.ok(held >= 400 && held <= 600, `held ${held}`);
+  assert.ok(longestRun(ran) <= 3, ran.join('\n'));
+  assert.ok(existsSync(join(dir, 'agent.away')));
+  age(0);
+  assert.equal(run([]).quiet, undefined);
+  assert.ok(!existsSync(join(dir, 'agent.away')));
+});
+
+test('a stop during a safety pause gives the hotline again', t => {
+  const home = scratch(), dir = join(home, 'sessions', 'x');
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'events.jsonl'), '');
+  writeFileSync(join(dir, 'server.json'), JSON.stringify({ pid: 1, url: 'http://127.0.0.1:1/?k=x' }));
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({ phase: 'response', paused: true }));
+  const at = Date.now() / 1000 - 1000;
+  utimesSync(join(dir, 'events.jsonl'), at, at);
+  const r = JSON.parse(spawnSync(process.execPath, [ROR, 'wait', '--session', dir, '--timeout', '0.05'], { encoding: 'utf8', env: { ...process.env, RORSCHACH_HOME: home } }).stdout.trim());
+  assert.equal(r.quiet, true);
+  assert.match(r.note, /12356/);
+});
+
+test('an agent that has stepped away is flagged as soon as the person does something', async t => {
+  const s = session(t);
+  s.ror('wait', '--timeout', '0.1');
+  writeFileSync(join(s.session, 'agent.away'), '1');
+  await s.post('/api/begin');
+  await until('提示', async () => (await s.state()).agentStalled === true, 12000);
+  s.ror('wait', '--timeout', '0.1');
+  await until('恢复', async () => (await s.state()).agentStalled === false, 12000);
+});
+
 // ---------- the voice bridge, against a stand-in app-server ----------
 const bridgeFor = (t, mode, extra = {}) => {
   const log = join(scratch(), 'fake.log');
@@ -518,6 +606,92 @@ test('a refresh ends the call with the page: that is not a lost voice, and the n
   await until('念不出来的台词不会卡住', () => { const tr = s.trace(); return tr.filter(e => e.type === 'say.start').length === tr.filter(e => e.type === 'say.end').length; }, 15000);
   assert.equal((await s.post('/api/voice/offer', { sdp: 'y' })).sdp, 'fake-answer');
   assert.equal((await s.state()).voice.status, 'live');
+});
+
+// A page holding the session open, so a dropped call has someone to place the next one.
+const holdPage = async (t, s) => {
+  const ctl = new AbortController();
+  t.after(() => ctl.abort());
+  const es = await fetch(s.url.replace('/?k=', '/api/events?k='), { signal: ctl.signal });
+  const reader = es.body.getReader();
+  await reader.read();
+  let seen = '';
+  (async () => { const dec = new TextDecoder(); try { for (;;) { const { value, done } = await reader.read(); if (done) return; seen += dec.decode(value); } } catch { /* the test is over */ } })();
+  return { seen: () => seen };
+};
+const dropCall = s => process.kill(s.calls().filter(c => c.pid).at(-1).pid, 'SIGKILL');
+
+test('a call that drops while the page is open is placed again: same mode, the cut line read again, nothing lost', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await s.post('/api/voice/up');
+  await s.post('/api/begin');
+  const page = await holdPage(t, s);
+  await until('台词已发给语音', () => s.calls().some(c => c.text?.startsWith('[照读]')));
+  const firstLine = s.calls().find(c => c.text?.startsWith('[照读]')).text;
+  const said = () => s.calls().filter(c => c.text === firstLine).length;
+  dropCall(s);
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+  assert.equal((await s.state()).voice.mode, 'codex');
+  await until('页面收到重拨', () => page.seen().includes('voiceRedial'));
+  assert.ok(!s.events().some(e => e.t === 'voice' && e.status === 'closed'));
+  // Lines wait for a call that can be heard: an offer answered is not yet audio flowing.
+  assert.equal((await s.post('/api/voice/offer', { sdp: 'y' })).sdp, 'fake-answer');
+  await wait(150);
+  assert.equal((await s.state()).voice.status, 'redialing');
+  const before = said();
+  assert.equal(before, 1);
+  await s.post('/api/voice/up');
+  assert.equal((await s.state()).voice.status, 'live');
+  await until('被打断的那句重念', () => said() === 2);
+  const voice = s.trace().filter(e => e.type === 'voice').map(e => e.status);
+  assert.deepEqual(voice.slice(-2), ['redialing', 'live']);
+  assert.ok(s.trace().some(e => e.type === 'say.end' && e.cut === true));
+  assert.ok(s.events().some(e => e.t === 'voice' && e.status === 'live'));
+  assert.equal(s.ror('export').ok, true);
+});
+
+test('a refused new call leaves the next try to the page, and its giving up lands on typing', async t => {
+  const refuse = join(scratch(), 'refuse');
+  const log = join(scratch(), 'fake.log');
+  const s = session(t, { voice: 'auto', env: { RORSCHACH_CODEX_BIN: FAKE, FAKE_CODEX_LOG: log, FAKE_CODEX_REFUSE: refuse, RORSCHACH_WHISPER_DIR: join(tmpdir(), 'no-such-dir') } });
+  s.calls = () => readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await holdPage(t, s);
+  writeFileSync(refuse, '1');
+  dropCall(s);
+  await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+  const r = await s.post('/api/voice/offer', { sdp: 'y' });
+  assert.equal(r.retry, true);
+  assert.equal((await s.state()).voice.mode, 'codex');
+  await s.post('/api/voice/mode', { mode: 'text', status: 'lost', reason: r.error });
+  assert.equal((await s.state()).voice.mode, 'text');
+  s.ror('say', '这句话还要念出去');
+  await until('台词不被扣住', () => s.trace().some(e => e.type === 'say.start' && e.text === '这句话还要念出去'));
+});
+
+test('a call that keeps dropping stops being placed, and a page that never answers does not hold the voice forever', async t => {
+  const s = voiceSession(t);
+  await s.post('/api/voice/offer', { sdp: 'x' });
+  await holdPage(t, s);
+  for (let i = 0; i < 3; i++) {
+    dropCall(s);
+    await until('进入重拨', async () => (await s.state()).voice.status === 'redialing');
+    await s.post('/api/voice/offer', { sdp: 'y' });
+    await s.post('/api/voice/up');
+    assert.equal((await s.state()).voice.status, 'live');
+  }
+  dropCall(s);
+  await until('退回打字', async () => (await s.state()).voice.mode === 'text');
+  assert.ok(s.events().some(e => e.t === 'voice' && e.status === 'closed' && e.mode === 'text'));
+
+  const log = join(scratch(), 'fake2.log');
+  const quick = session(t, { voice: 'auto', env: { RORSCHACH_CODEX_BIN: FAKE, FAKE_CODEX_LOG: log, RORSCHACH_REDIAL_MS: '200', RORSCHACH_WHISPER_DIR: join(tmpdir(), 'no-such-dir') } });
+  quick.calls = () => readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  await quick.post('/api/voice/offer', { sdp: 'x' });
+  await holdPage(t, quick);
+  dropCall(quick);
+  await until('没人接就退回打字', async () => (await quick.state()).voice.mode === 'text');
 });
 
 test('a page giving up on the call is recorded as lost, and the deliberate close is not reported twice', async t => {

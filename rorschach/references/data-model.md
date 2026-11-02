@@ -69,6 +69,6 @@ ror validate f                   # 校验
 
 `safety: true` 表示这句话触发了安全暂停，或是在暂停中说的。它说的是这个人，不是图版：留在 `unassigned.utterances` 和 `transcript`，不算反应时，也不进节奏判断。`report.html` 里内嵌的数据把这些话换成占位，完整内容只在本机的 `protocol.json`。
 
-语音中途断了：`administration.voice.changes` 记下何时、为何，`mode` 是最后实际用的方式。服务重启：`trace.jsonl` 里有 `session.restart`，id 接着编号，不会重用。
+语音中途断了：`administration.voice.changes` 记下何时、为何，重连是一条 `redialing` 接一条 `live`；`mode` 是最后实际用的方式。服务重启：`trace.jsonl` 里有 `session.restart`，id 接着编号，不会重用。
 
 报告页的「下载数据」按钮得到的是同一份 `protocol.json`。

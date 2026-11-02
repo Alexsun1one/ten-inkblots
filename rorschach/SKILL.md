@@ -39,10 +39,12 @@ ror start --name <称呼>
 ### 2. 进入循环
 
 ```
-ror wait --timeout 45
+ror wait
 ```
 
-`wait` 一返回就处理事件，处理完马上再 `wait`，直到结果里有 `ended: true`。**在那之前不要结束这一轮回复，也不要等用户在对话框里回你：** 用户在页面上说话，你一停，那边就没人听了。发出 `url` 之后同样接着 `wait`。两次 `wait` 之间不写长分析；事件超过五分钟没人读，页面会提示用户你没有回应。`idleSeconds` 只表示这段时间没事件，继续等。结果带 `deleted: true` 表示用户删了记录，见事件表。
+`wait` 一返回就处理事件，处理完马上运行结果里 `next` 给的那句，直到结果里有 `ended: true`。`next` 带着读到了哪里，照抄，不要换回固定的命令：有的 harness 会拦连续相同的调用。**在那之前不要结束这一轮回复，也不要等用户在对话框里回你：** 用户在页面上说话，你一停，那边就没人听了。发出 `url` 之后同样接着 `wait`。两次 `wait` 之间不写长分析；事件超过五分钟没人读，页面会请用户回到对话框说「继续」。`idleSeconds` 只表示这段时间没事件，继续等。结果带 `deleted: true` 表示用户删了记录，见事件表。
+
+只有一种情况结束这一轮：结果带 `quiet: true`，表示页面约七分钟没有任何动静，这时没有 `next`。按 `note` 告诉对方，回来后说一声「继续」。对方说了就运行 `ror wait`，这期间的事件都还在。
 
 ### 3. 导入（intake）
 
@@ -88,7 +90,7 @@ ror inquire
 
 脚本也会追问：只圈没说，问「为什么说它像？」；只说没圈，问「能把它圈出来吗？」；都有了，问一句「还有吗？」。每种问一次，这时 `ror inquire` 返回 `unanswered: true`，不会翻页。
 
-收到 `ask_more` 后运行 `ror wait --timeout 15`。这段时间没有新事件，就运行 `ror inquire` 往下走。别让对方干等。
+收到 `ask_more` 后运行 `next` 那句，加上 `--timeout 15`。这段时间没有新事件，就运行 `ror inquire` 往下走。别让对方干等。
 
 每条都要听到两件事：**在哪里看到的**，**是什么让它看起来像这样**。脚本问过还不清楚，或对方用了含糊的词，你再追问一次，话术只用 `ror say "是什么让它看起来像这样？"` 或 `ror say "你说的 <原词> 是指？"`。这些细节是之后读懂这个人的依据。
 
@@ -101,7 +103,7 @@ ror inquire
 对方点图、拖图、说「第七张」，脚本自己记。脚本会追问「为什么」和「还有别的原因吗」。你要做的：
 
 - 对方描述了图却没说第几张（「像灯的那张」），`utterance` 没带 `command`，当前题也还没选：`ror choice --card 7`。
-- **收到 `asked`（`kind: ask_more`）后运行 `ror wait --timeout 15`。这段时间没有新事件，就运行 `ror choice --next --question <题>` 翻题。** 这一步不能省，否则对方会干等。返回 `just_asked` 表示刚问完，再等几秒；`already_moved` 表示已经翻过，不用管。
+- **收到 `asked`（`kind: ask_more`）后运行 `next` 那句，加上 `--timeout 15`。这段时间没有新事件，就运行 `ror choice --next --question <题>` 翻题。** 这一步不能省，否则对方会干等。返回 `just_asked` 表示刚问完，再等几秒；`already_moved` 表示已经翻过，不用管。
 
 这四题只问这张图给对方的感觉。解读只依据对方说的理由，不判断真实的父母，也不用「第四张是父亲图、第七张是母亲图」这类传统说法。父母已故、缺席，或对方不想谈：温和回应一句，再运行 `ror choice --skip`。
 
@@ -163,7 +165,7 @@ ror report --file <session>/draft-narrative.json
 | `feedback` | 用户在报告里点了像或不像 | 交还时可以提到 |
 | `end_requested` | 用户点了「结束」 | `ror export`，再 `ror stop` |
 | `handoff` | 用户直接对你说话或提要求 | 用 `ror say` 回答；与测试无关的请求放到测试结束后 |
-| `voice` | 语音状态变化，`status` 为 `failed`、`closed`、`error`、`lost` 时界面已退回打字 | 继续走流程 |
+| `voice` | 语音状态变化。通话断了脚本会先自己重连，接上时 `status` 是 `live`；`failed`、`closed`、`error`、`lost` 表示重连也失败了，界面已退回打字 | 继续走流程 |
 | `browser` | 页面关了约 30 秒（`status: closed`，带 `url`），或又开了（`open`） | 关了就把 `url` 再发给用户，继续等 |
 | `safety` | 听到危险信号，脚本已暂停 | 见「边界」 |
 | `resumed_by_user` | 用户点了继续 | 继续 |

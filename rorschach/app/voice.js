@@ -100,14 +100,42 @@
     });
     if (!up) { pc.close(); pc = null; return { error: 'webrtc_timeout' }; }
     inCall = true;
+    if (talk) gate(true);
+    api('/api/voice/up').catch(() => {});
     return { ok: true };
   }
+  const hangUp = () => {
+    inCall = false; pendingSay = false;
+    clearTimeout(lostTimer);
+    gate(false);
+    try { dc?.close(); pc?.close(); } catch { /* already closed */ }
+    pc = dc = null;
+    if (audioEl) audioEl.srcObject = null;
+    outAnalyser = null;
+  };
+  // The server decides: a new call, or typing if it has tried enough.
   function lost(reason) {
     if (V.mode !== 'codex') return;
-    V.stop();
-    api('/api/voice/mode', { mode: 'text', status: 'lost', reason }).catch(() => {});
-    V.onLost(reason);
+    api('/api/voice/redial', { reason }).catch(() => { V.stop(); V.onLost(reason); });
   }
+  // A new call on the same microphone.
+  let redialing = false;
+  V.redial = async voiceName => {
+    if (V.mode !== 'codex' || redialing) return;
+    redialing = true;
+    let r = {};
+    for (let i = 0; i < 3 && V.mode === 'codex'; i++) {
+      if (i) await new Promise(done => setTimeout(done, 3000));
+      hangUp();
+      r = await connectRealtime(voiceName).catch(e => ({ error: e.message }));
+      if (!r.error) break;
+    }
+    redialing = false;
+    if (!r.error || V.mode !== 'codex') return;
+    V.stop();
+    api('/api/voice/mode', { mode: 'text', status: 'lost', reason: r.error }).catch(() => {});
+    V.onLost(r.error);
+  };
 
   // ---------- local fallback: energy VAD → whisper; system speech for the examiner ----------
   let vadOff = false;
@@ -200,15 +228,11 @@
   V.setTalk = on => { talk = on; gate(on); };
   // Nothing keeps listening after this: not the microphone, not the call.
   V.stop = () => {
-    inCall = false; talk = false; pendingSay = false;
-    clearTimeout(lostTimer);
-    gate(false);
-    try { dc?.close(); pc?.close(); } catch { /* already closed */ }
-    pc = dc = null;
+    talk = false;
+    hangUp();
     if (localNode) { localNode.onaudioprocess = null; localNode.disconnect(); localNode = null; }
     micStream?.getTracks().forEach(t => t.stop());
-    micStream = micAnalyser = outAnalyser = null;
-    if (audioEl) audioEl.srcObject = null;
+    micStream = micAnalyser = null;
     if ('speechSynthesis' in window) speechSynthesis.cancel();
     Object.assign(V, { mode: 'text', level: 0, speakingLevel: 0, speaking: false });
   };
